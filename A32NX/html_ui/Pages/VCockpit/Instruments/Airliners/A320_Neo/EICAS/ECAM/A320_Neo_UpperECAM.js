@@ -2015,33 +2015,24 @@ var A320_Neo_UpperECAM;
             return value;
         }
         getN1GaugeThrottleValue() {
-            const throttle = Math.abs(Simplane.getEngineThrottleCommandedN1(this.index));
+            const throttle = Math.abs(SimVar.GetSimVarValue("L:A32NX_AUTOTHRUST_TLA_N1:" + (this.index + 1), "number"));
             const value = throttle * A320_Neo_UpperECAM.Definitions.THROTTLE_TO_N1_GAUGE;
             return value;
         }
         getThrottlePosition() {
-            return Math.abs(Simplane.getEngineThrottleCommandedN1(this.index));
+            return Math.abs(SimVar.GetSimVarValue("L:A32NX_AUTOTHRUST_TLA_N1:" + (this.index + 1), "number"));
         }
         getN1GaugeAutopilotThrottleValues(_values) {
-            // This seems broken
-            _values[0] = 0;
-            _values[1] = 0;
-            // if ((_values != null) && (_values.length == 2)) {
-            //     if (Simplane.getAutoPilotThrottleActive()) {
-            //         const engineThrottle = this.getN1GaugeValue();
-            //         const autopilotThrottle = Simplane.getAutopilotCommandedN1(this.index);
-            //         if (engineThrottle < autopilotThrottle) {
-            //             _values[0] = engineThrottle;
-            //             _values[1] = autopilotThrottle;
-            //         } else {
-            //             _values[0] = autopilotThrottle;
-            //             _values[1] = engineThrottle;
-            //         }
-            //     } else {
-            //         _values[0] = 0;
-            //         _values[1] = 0;
-            //     }
-            // }
+            if (SimVar.GetSimVarValue("L:A32NX_AUTOTHRUST_STATUS", "number") == 2) {
+                // seems still broken on gauge side -> but this will be how to get the values.
+                // _values[0] = SimVar.GetSimVarValue("L:A32NX_AUTOTHRUST_N1_COMMANDED:1", "number");
+                // _values[1] = SimVar.GetSimVarValue("L:A32NX_AUTOTHRUST_N1_COMMANDED:2", "number");
+                _values[0] = 0;
+                _values[1] = 0;
+            } else {
+                _values[0] = 0;
+                _values[1] = 0;
+            }
         }
         getN1GaugeExtraMessage() {
             if (Simplane.getEngineThrottle(this.index) < 0) {
@@ -2317,20 +2308,37 @@ var A320_Neo_UpperECAM;
                         this.throttleValue.textContent = throttlePosition.toFixed(1);
                     }
                 } else {
-                    const throttleMode = Math.max(Simplane.getEngineThrottleMode(0), Simplane.getEngineThrottleMode(1));
-
-                    if (Simplane.getCurrentFlightPhase() < FlightPhase.FLIGHT_PHASE_CLIMB) {
-                        if ((throttleMode !== ThrottleMode.TOGA) && (throttleMode !== ThrottleMode.REVERSE)) {
+                    const thrustLimitType = SimVar.GetSimVarValue("L:A32NX_AUTOTHRUST_THRUST_LIMIT_TYPE", "number");
+                    const thrustLimit = SimVar.GetSimVarValue("L:A32NX_AUTOTHRUST_THRUST_LIMIT", "number");
+                    let throttleMode = ThrottleMode.UNKNOWN;
+                    switch (thrustLimitType) {
+                        case 1:
+                            throttleMode = ThrottleMode.CLIMB;
+                            this.setFlexTemperature(false);
+                            break;
+                        case 2:
+                            throttleMode = ThrottleMode.FLEX_MCT;
+                            this.setFlexTemperature(false);
+                            break;
+                        case 3:
+                            throttleMode = ThrottleMode.FLEX_MCT;
                             const flexTemp = Simplane.getFlexTemperature();
                             this.setFlexTemperature(flexTemp !== 0, flexTemp);
-                        } else {
+                            break;
+                        case 4:
+                            throttleMode = ThrottleMode.TOGA;
                             this.setFlexTemperature(false);
-                        }
-                    } else {
-                        this.setFlexTemperature(false);
+                            break;
+                        case 5:
+                            throttleMode = ThrottleMode.REVERSE;
+                            this.setFlexTemperature(false);
+                            break;
+                        default:
+                            throttleMode = ThrottleMode.UNKNOWN;
+                            this.setFlexTemperature(false);
+                            break;
                     }
-
-                    this.setThrottle(true, throttlePosition, throttleMode, onGround, Simplane.getCurrentFlightPhase());
+                    this.setThrottle(true, thrustLimit, throttleMode, onGround, Simplane.getCurrentFlightPhase());
                 }
             } else {
                 this.setThrottle(false);
@@ -2381,18 +2389,28 @@ var A320_Neo_UpperECAM;
                             }
                             case ThrottleMode.FLEX_MCT:
                             {
-                                this.throttleState.textContent = this.currentPhase === FlightPhase.FLIGHT_PHASE_GOAROUND
-                                && Simplane.getEngineActive(0)
-                                && Simplane.getEngineActive(1) ? "GA\xa0SOFT" : this.getThrustRatingMode(this.currentGrounded, "MCT");
+                                if (this.flexTemperatureIsActive) {
+                                    this.throttleState.textContent = "FLX";
+                                } else {
+                                    this.throttleState.textContent = "MCT";
+                                }
+                                break;
+                            }
+                            case ThrottleMode.CLIMB:
+                            {
+                                this.throttleState.textContent = "CLB";
                                 break;
                             }
                             case ThrottleMode.REVERSE:
                             {
                                 this.throttleState.textContent = "MREV";
-                                _value = 66.7;
                                 break;
                             }
-                            default: this.throttleState.textContent = this.getThrustRatingMode(this.currentGrounded);
+                            default: {
+                                this.throttleState.className = "inactive";
+                                this.throttleState.textContent = "XX";
+                                break;
+                            };
                         }
                     } else {
                         this.throttleState.className = "inactive";
